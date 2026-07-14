@@ -1,0 +1,588 @@
+```html
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <!-- 確保在 iOS 與 Android 上 100% 顯示比例一致，且禁止雙擊縮放以防版面變形 -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>個人專屬名片</title>
+    
+    <!-- 引入 Tailwind CSS 打造時尚簡潔風格 -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- 引入 FontAwesome 用於呈現精美社群圖示 (含 FB, IG, LINE 等) -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #0b0f19;
+            background-size: cover;
+            background-position: center;
+            background-attachment: fixed;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 1.25rem;
+            color: white;
+            transition: background-image 0.5s ease-in-out;
+        }
+
+        /* 確保行動裝置點擊輸入框時不會導致網頁放大縮小 */
+        input, textarea, select {
+            font-size: 16px !important;
+        }
+
+        /* 磨砂玻璃擬物風 */
+        .glass-card {
+            background: rgba(17, 24, 39, 0.7);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+        }
+
+        /* 卡片左側懸浮自訂背景上傳按鈕 */
+        .left-bg-btn {
+            position: absolute;
+            left: -18px;
+            top: 50%;
+            transform: translateY(-50%);
+            z-index: 40;
+        }
+
+        /* 絕對隱密的修改按鈕：覆蓋在展示模式卡片的最底部，高 44px，寬 100% 滿版，平常完全透明 */
+        .secret-modify-overlay {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            height: 44px;
+            background: transparent;
+            cursor: pointer;
+            z-index: 50; /* 給予最高層級，確保 100% 可被點擊 */
+            border-bottom-left-radius: 1.5rem;
+            border-bottom-right-radius: 1.5rem;
+        }
+        
+        /* 點擊時會有極微弱的灰光回饋，利於擁有者確認有點到，但路人不易察覺 */
+        .secret-modify-overlay:active {
+            background: rgba(255, 255, 255, 0.02);
+        }
+
+        /* 自定義優雅滾動條 */
+        ::-webkit-scrollbar { width: 5px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 99px; }
+
+        img { -webkit-user-select: none; user-select: none; }
+    </style>
+</head>
+<body id="body-bg">
+
+    <!-- 背景暗色半透明遮罩，保證無論更換何種背景，文字皆能完美呈現讀取 -->
+    <div class="fixed inset-0 bg-black/60 z-0 pointer-events-none"></div>
+
+    <!-- 輔助定位層：便於定位卡片與左側小小上傳按鈕 -->
+    <div class="relative w-full max-w-md my-4 z-10">
+        
+        <!-- 【左側懸浮背景更換小小按鈕】 (僅在編輯模式下可見) -->
+        <div id="bg-upload-wrapper" class="left-bg-btn hidden">
+            <label class="flex items-center justify-center w-9 h-9 rounded-full bg-blue-600 hover:bg-blue-500 text-white shadow-lg cursor-pointer transition-all transform active:scale-90 border border-white/20" title="更換自訂背景">
+                <i class="fas fa-image text-xs"></i>
+                <input type="file" id="bg-file-input" accept="image/*" class="hidden" onchange="uploadLocalBackground(event)">
+            </label>
+        </div>
+
+        <!-- 主卡片 -->
+        <main class="glass-card w-full rounded-3xl p-6 sm:p-8 flex flex-col items-center min-h-[520px] relative overflow-hidden">
+
+            <!-- ==================== 1. 展示模式 (View Mode) ==================== -->
+            <div id="view-mode-section" class="w-full flex flex-col items-center hidden">
+                <!-- FB大頭貼 (自動抓取) -->
+                <div class="relative w-24 h-24 mb-4">
+                    <img id="view-avatar" src="" alt="FB Avatar" class="w-full h-full rounded-full object-cover border-4 border-white/10 shadow-2xl">
+                </div>
+
+                <!-- 姓名與專業職稱 -->
+                <h1 id="view-name" class="text-2xl font-bold tracking-wider text-center mb-1"></h1>
+                <h2 id="view-title" class="text-xs text-blue-400 font-medium tracking-widest uppercase text-center mb-4"></h2>
+                
+                <!-- 學經歷個人簡介 -->
+                <p id="view-bio" class="text-center text-sm text-gray-300 mb-6 leading-relaxed px-1 whitespace-pre-wrap max-h-[140px] overflow-y-auto w-full"></p>
+
+                <!-- 社群轉跳連結與聯絡資訊容器 -->
+                <div id="view-links-container" class="w-full flex flex-col gap-3 pb-6">
+                    <!-- 由 JavaScript 動態渲染連結、電話與地址 -->
+                </div>
+                
+                <!-- 【極度隱密的修改按鈕】 (位於卡片最底部，完全透明) -->
+                <div class="secret-modify-overlay" onclick="triggerUnlockModal()" title="系統管理入口"></div>
+            </div>
+
+            <!-- ==================== 2. 編輯模式 (Edit Mode) ==================== -->
+            <div id="edit-mode-section" class="w-full flex flex-col items-center">
+                <h2 class="text-base font-semibold mb-5 text-blue-400 flex items-center gap-2 tracking-widest uppercase">
+                    <i class="fas fa-sliders-h"></i> 編輯名片資訊
+                </h2>
+                
+                <!-- 可滾動表單區域 -->
+                <div class="w-full space-y-4 max-h-[58vh] overflow-y-auto pr-1">
+                    
+                    <!-- FB帳號設定 (用於自動抓取頭像) -->
+                    <div>
+                        <label class="text-xs text-white/50 mb-1 block font-medium">Facebook 用戶名或 ID (自動擷取頭像)</label>
+                        <div class="relative">
+                            <span class="absolute inset-y-0 left-0 flex items-center pl-3 text-white/30 text-sm">facebook.com/</span>
+                            <input type="text" id="edit-fb-user" oninput="syncFbAvatar()" placeholder="zuck" class="w-full bg-white/5 border border-white/10 rounded-xl pl-32 pr-4 py-2 text-white focus:outline-none focus:border-blue-500 text-sm transition">
+                        </div>
+                        <p class="text-[10px] text-white/30 mt-1">輸入您FB帳號（如：zuck）系統將自動連動更新大頭照。</p>
+                    </div>
+
+                    <!-- 頭像預覽 -->
+                    <div class="flex items-center gap-3 bg-white/5 p-2.5 rounded-xl border border-white/5">
+                        <img id="edit-avatar-preview" src="https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80" class="w-11 h-11 rounded-full object-cover border border-white/20">
+                        <div>
+                            <span class="text-xs text-white/50 block">FB 預覽大頭貼</span>
+                            <span id="avatar-status-text" class="text-[11px] text-green-400 font-medium">預設圖片</span>
+                        </div>
+                    </div>
+
+                    <!-- 姓名與職稱 -->
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <label class="text-xs text-white/50 mb-1 block">您的姓名</label>
+                            <input type="text" id="edit-name" placeholder="王大明" class="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-blue-500 text-sm">
+                        </div>
+                        <div>
+                            <label class="text-xs text-white/50 mb-1 block">專業職稱 / 學位</label>
+                            <input type="text" id="edit-title" placeholder="資深專案經理" class="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-blue-500 text-sm">
+                        </div>
+                    </div>
+
+                    <!-- 學經歷與個人介紹 -->
+                    <div>
+                        <label class="text-xs text-white/50 mb-1 block">個人簡介與學經歷</label>
+                        <textarea id="edit-bio" rows="3" placeholder="請在此填寫您的學歷、工作背景或自我介紹..." class="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-blue-500 text-sm"></textarea>
+                    </div>
+
+                    <!-- 聯絡電話與聯絡地址 -->
+                    <div class="border-t border-white/10 pt-3 space-y-3">
+                        <span class="text-xs font-semibold text-blue-400 block tracking-wider">聯絡資訊 (若不填寫，展示時自動隱藏)</span>
+                        <div>
+                            <label class="text-xs text-white/50 mb-1 block">聯絡電話</label>
+                            <input type="tel" id="edit-phone" placeholder="例如: 0912-345-678" class="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-blue-500 text-sm">
+                        </div>
+                        <div>
+                            <label class="text-xs text-white/50 mb-1 block">聯絡地址</label>
+                            <input type="text" id="edit-address" placeholder="例如: 台北市信義區..." class="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-blue-500 text-sm">
+                        </div>
+                    </div>
+
+                    <!-- 社群跳轉連結動態管理 -->
+                    <div class="border-t border-white/10 pt-3">
+                        <div class="flex justify-between items-center mb-3">
+                            <span class="text-xs font-semibold text-blue-400 tracking-wider">社群好友連結</span>
+                            <button onclick="addSocialLinkField()" class="text-[11px] bg-blue-600/20 text-blue-300 border border-blue-500/30 px-2.5 py-1 rounded-lg hover:bg-blue-600/40 transition">
+                                <i class="fas fa-plus mr-1"></i> 新增社群
+                            </button>
+                        </div>
+                        <div id="links-editor-container" class="space-y-3">
+                            <!-- 動態渲染社群連結編輯區 -->
+                        </div>
+                    </div>
+
+                </div>
+
+                <!-- 確定並建立密碼按鈕 -->
+                <button onclick="triggerSaveFlow()" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-semibold py-3 rounded-2xl transition-all duration-300 shadow-lg mt-4 flex items-center justify-center gap-2">
+                    <i class="fas fa-check"></i> 完成並進入展示模式
+                </button>
+            </div>
+
+        </main>
+    </div>
+
+    <!-- ==================== 對話框 (Modals) ==================== -->
+    
+    <!-- 1. 建立密碼對話框 (首次點確定時彈出) -->
+    <div id="modal-setup-password" class="fixed inset-0 z-50 flex items-center justify-center bg-black/85 hidden opacity-0 transition-opacity duration-300">
+        <div class="glass-card w-11/12 max-w-sm rounded-3xl p-6 transform scale-95 transition-transform duration-300" id="setup-box">
+            <h3 class="text-lg font-bold mb-2 text-center text-blue-400">建立管理密碼</h3>
+            <p class="text-xs text-gray-300 mb-5 text-center">設定管理密碼後即可鎖定名片，未來點擊最底部隱藏按鈕並輸入此密碼即可重新修改。</p>
+            
+            <input type="password" id="setup-pwd-input-1" placeholder="請設定管理密碼" class="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 mb-3 text-white text-center tracking-widest focus:outline-none focus:border-blue-500">
+            <input type="password" id="setup-pwd-input-2" placeholder="請再次輸入密碼確認" class="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 mb-5 text-white text-center tracking-widest focus:outline-none focus:border-blue-500">
+            
+            <div class="flex gap-3">
+                <button onclick="hideCustomModal('modal-setup-password')" class="flex-1 bg-white/10 hover:bg-white/20 py-2.5 rounded-xl transition text-sm">返回修改</button>
+                <button onclick="verifyAndSavePassword()" class="flex-1 bg-blue-600 hover:bg-blue-500 py-2.5 rounded-xl font-medium transition text-sm">確認鎖定</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 2. 輸入密碼驗證解鎖對話框 (展示模式點底部隱藏按鈕彈出) -->
+    <div id="modal-verify-password" class="fixed inset-0 z-50 flex items-center justify-center bg-black/85 hidden opacity-0 transition-opacity duration-300">
+        <div class="glass-card w-11/12 max-w-sm rounded-3xl p-6 transform scale-95 transition-transform duration-300" id="verify-box">
+            <h3 class="text-lg font-bold mb-2 text-center text-blue-400">解鎖編輯權限</h3>
+            <p class="text-xs text-gray-300 mb-5 text-center">請輸入正確密碼以進入編輯模式並開啟背景修改功能。</p>
+            
+            <input type="password" id="verify-pwd-input" placeholder="請輸入管理密碼" class="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 mb-5 text-white text-center tracking-widest focus:outline-none focus:border-blue-500">
+            
+            <div class="flex gap-3">
+                <button onclick="hideCustomModal('modal-verify-password')" class="flex-1 bg-white/10 hover:bg-white/20 py-2.5 rounded-xl transition text-sm">返回展示</button>
+                <button onclick="confirmVerifyPassword()" class="flex-1 bg-blue-600 hover:bg-blue-500 py-2.5 rounded-xl font-medium transition text-sm">解鎖編輯</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 3. 自定義精美 Toast/Alert 訊息框 (用以取代原生 alert) -->
+    <div id="custom-toast" class="fixed top-5 left-1/2 transform -translate-x-1/2 z-50 bg-red-600/90 backdrop-blur-md border border-red-500/30 text-white text-sm font-medium px-6 py-3 rounded-2xl shadow-xl transition-all duration-300 translate-y-[-50px] opacity-0 pointer-events-none">
+        <span id="toast-message">提示訊息</span>
+    </div>
+
+    <!-- 系統核心邏輯 -->
+    <script>
+        // 預設資料包含 Facebook, Instagram, 以及您需要的 LINE 
+        const defaultCardTemplate = {
+            fbUsername: 'zuck',
+            avatar: 'https://graph.facebook.com/zuck/picture?type=large',
+            name: '王大明',
+            title: '資深技術特助 / NFC 應用工程師',
+            bio: '【學歷經歷】知名大學 資訊管理學系畢業\n知名互聯網研發經理 5 年、硬體研發團隊負責人 3 年。\n\n點擊左側藍色小小按鈕上傳自訂背景，填寫完畢儲存後即可鎖定名片，在手機碰觸 NFC 時直接展示！',
+            phone: '',
+            address: '',
+            bgImage: '',
+            links: [
+                { name: 'LINE 官方諮詢', url: 'https://line.me', icon: 'fab fa-line', color: '#00B900' },
+                { name: 'Facebook 帳號', url: 'https://facebook.com', icon: 'fab fa-facebook', color: '#1877F2' },
+                { name: 'Instagram 追蹤', url: 'https://instagram.com', icon: 'fab fa-instagram', color: '#E1306C' }
+            ]
+        };
+
+        let cardData = {};
+        let storedPassword = localStorage.getItem('card_admin_pwd');
+
+        // 初始化
+        function initCardApp() {
+            const localData = localStorage.getItem('card_data');
+            if (localData) {
+                cardData = JSON.parse(localData);
+            } else {
+                cardData = JSON.parse(JSON.stringify(defaultCardTemplate));
+            }
+
+            // 套用自訂背景圖
+            applyCardBackground(cardData.bgImage);
+
+            // 判斷直接載入對應模式
+            if (storedPassword) {
+                switchToViewMode(); // 有密碼 -> NFC 觸碰直接進入「展示模式」
+            } else {
+                switchToEditMode(); // 無密碼 -> 留在「編輯模式」讓使用者完成初始化
+            }
+        }
+
+        // 背景圖渲染
+        function applyCardBackground(base64Image) {
+            const bodyEl = document.getElementById('body-bg');
+            if (base64Image) {
+                bodyEl.style.backgroundImage = `url(${base64Image})`;
+            } else {
+                bodyEl.style.backgroundImage = 'none';
+            }
+        }
+
+        // ================= FB 大頭貼自動擷取功能 =================
+        function syncFbAvatar() {
+            const userField = document.getElementById('edit-fb-user').value.trim();
+            const previewImg = document.getElementById('edit-avatar-preview');
+            const statusLabel = document.getElementById('avatar-status-text');
+
+            if (userField) {
+                const generatedUrl = `https://graph.facebook.com/${userField}/picture?type=large`;
+                previewImg.src = generatedUrl;
+                statusLabel.innerText = "已連結 FB 公開頭像";
+                statusLabel.className = "text-[11px] text-blue-400 font-medium";
+                cardData.avatar = generatedUrl;
+            } else {
+                previewImg.src = 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80';
+                statusLabel.innerText = "預設大頭照";
+                statusLabel.className = "text-[11px] text-white/30";
+                cardData.avatar = previewImg.src;
+            }
+        }
+
+        // ================= 模式切換器 =================
+
+        // 1. 切換至展示模式 (View Mode)
+        function switchToViewMode() {
+            document.getElementById('edit-mode-section').classList.add('hidden');
+            document.getElementById('view-mode-section').classList.remove('hidden');
+            
+            // 隱藏左側背景上傳小小按鈕 (展示模式不露出此編輯元件)
+            document.getElementById('bg-upload-wrapper').classList.add('hidden');
+            
+            renderViewData();
+        }
+
+        // 2. 切換至編輯模式 (Edit Mode)
+        function switchToEditMode() {
+            document.getElementById('view-mode-section').classList.add('hidden');
+            document.getElementById('edit-mode-section').classList.remove('hidden');
+            
+            // 顯示左側背景上傳按鈕 (編輯模式下可更換背景)
+            document.getElementById('bg-upload-wrapper').classList.remove('hidden');
+            
+            renderEditFields();
+        }
+
+        // ================= 資料渲染邏輯 =================
+
+        // 渲染展示頁面資料
+        function renderViewData() {
+            const avatarImg = document.getElementById('view-avatar');
+            avatarImg.src = cardData.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80';
+            
+            // 頭像載入失敗之防護處理
+            avatarImg.onerror = function() {
+                this.src = 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80';
+            };
+
+            document.getElementById('view-name').innerText = cardData.name || '您的姓名';
+            document.getElementById('view-title').innerText = cardData.title || '專業職稱 / 經歷學位';
+            document.getElementById('view-bio').innerText = cardData.bio || '';
+
+            const container = document.getElementById('view-links-container');
+            container.innerHTML = '';
+
+            // 1. 渲染複數個社群好友連結
+            if (cardData.links && cardData.links.length > 0) {
+                cardData.links.forEach(link => {
+                    const btn = document.createElement('a');
+                    btn.href = link.url;
+                    btn.target = '_blank';
+                    btn.className = 'w-full flex items-center justify-center gap-3 py-3 px-5 rounded-2xl bg-white/10 hover:bg-white/15 border border-white/10 transition-all duration-300 backdrop-blur-md shadow-md transform active:scale-95';
+                    btn.innerHTML = `
+                        <i class="${link.icon || 'fas fa-link'} text-xl" style="color: ${link.color || '#fff'}"></i>
+                        <span class="font-semibold text-sm tracking-wider">${link.name}</span>
+                    `;
+                    container.appendChild(btn);
+                });
+            }
+
+            // 2. 顯示電話與地址 (非空值才顯示)
+            if (cardData.phone || cardData.address) {
+                const infoCard = document.createElement('div');
+                infoCard.className = 'w-full bg-white/5 rounded-2xl p-4 border border-white/10 text-sm text-gray-300 mt-2 space-y-2.5';
+                let rawHtml = '';
+                if (cardData.phone) {
+                    rawHtml += `<p class="flex items-center gap-3"><i class="fas fa-phone text-blue-400 w-5 text-center"></i> ${cardData.phone}</p>`;
+                }
+                if (cardData.address) {
+                    rawHtml += `<p class="flex items-center gap-3"><i class="fas fa-map-marker-alt text-red-400 w-5 text-center"></i> ${cardData.address}</p>`;
+                }
+                infoCard.innerHTML = rawHtml;
+                container.appendChild(infoCard);
+            }
+        }
+
+        // 將資料寫入編輯欄位
+        function renderEditFields() {
+            document.getElementById('edit-fb-user').value = cardData.fbUsername || '';
+            document.getElementById('edit-name').value = cardData.name || '';
+            document.getElementById('edit-title').value = cardData.title || '';
+            document.getElementById('edit-bio').value = cardData.bio || '';
+            document.getElementById('edit-phone').value = cardData.phone || '';
+            document.getElementById('edit-address').value = cardData.address || '';
+            
+            syncFbAvatar();
+            renderLinkEditor();
+        }
+
+        // 動態生成編輯區的社群輸入列
+        function renderLinkEditor() {
+            const listContainer = document.getElementById('links-editor-container');
+            listContainer.innerHTML = '';
+            
+            cardData.links.forEach((link, idx) => {
+                const row = document.createElement('div');
+                row.className = 'bg-black/40 p-3.5 rounded-2xl border border-white/10 relative space-y-2';
+                row.innerHTML = `
+                    <button onclick="removeSocialLinkField(${idx})" class="absolute top-2.5 right-2.5 text-red-400 hover:text-red-300 transition text-sm">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                    <div>
+                        <input type="text" placeholder="顯示名稱 (如: LINE 諮詢)" value="${link.name}" class="field-link-name w-11/12 bg-transparent border-b border-white/20 pb-1 text-sm text-white focus:outline-none focus:border-blue-500 font-semibold" data-idx="${idx}">
+                    </div>
+                    <div>
+                        <input type="text" placeholder="跳轉網址 URL (如: https://...)" value="${link.url}" class="field-link-url w-full bg-transparent border-b border-white/10 pb-1 text-xs text-white/80 focus:outline-none focus:border-blue-500" data-idx="${idx}">
+                    </div>
+                    <div class="flex items-center justify-between gap-4 pt-1">
+                        <div class="flex-1">
+                            <input type="text" placeholder="圖示代碼 (如: fab fa-line)" value="${link.icon}" class="field-link-icon w-full bg-transparent border-b border-white/10 pb-1 text-[11px] text-white/50 focus:outline-none" data-idx="${idx}">
+                        </div>
+                        <div class="flex items-center gap-1.5">
+                            <span class="text-[10px] text-white/40">按鈕色調:</span>
+                            <input type="color" value="${link.color || '#ffffff'}" class="field-link-color w-6 h-6 rounded cursor-pointer bg-transparent border-0" data-idx="${idx}">
+                        </div>
+                    </div>
+                `;
+                listContainer.appendChild(row);
+            });
+        }
+
+        // ================= 社群連結增加與刪除控制 =================
+        function addSocialLinkField() {
+            cardData.links.push({ name: '', url: 'https://', icon: 'fas fa-link', color: '#ffffff' });
+            renderLinkEditor();
+        }
+
+        function removeSocialLinkField(idx) {
+            cardData.links.splice(idx, 1);
+            renderLinkEditor();
+        }
+
+        // ================= 左側圖片按鈕上傳並設為背景 (Base64) =================
+        function uploadLocalBackground(event) {
+            const file = event.target.files[0];
+            if (file) {
+                const fileReader = new FileReader();
+                fileReader.onload = function(e) {
+                    const base64Str = e.target.result;
+                    cardData.bgImage = base64Str;
+                    applyCardBackground(base64Str);
+                    saveToLocalStorage();
+                };
+                fileReader.readAsDataURL(file);
+            }
+        }
+
+        // ================= 儲存流程控制 =================
+
+        // 點擊「儲存」按鈕
+        function triggerSaveFlow() {
+            // 先讀取當前畫面輸入的值暫存
+            cardData.fbUsername = document.getElementById('edit-fb-user').value.trim();
+            cardData.name = document.getElementById('edit-name').value.trim();
+            cardData.title = document.getElementById('edit-title').value.trim();
+            cardData.bio = document.getElementById('edit-bio').value;
+            cardData.phone = document.getElementById('edit-phone').value.trim();
+            cardData.address = document.getElementById('edit-address').value.trim();
+
+            const inputNames = document.querySelectorAll('.field-link-name');
+            const inputUrls = document.querySelectorAll('.field-link-url');
+            const inputIcons = document.querySelectorAll('.field-link-icon');
+            const inputColors = document.querySelectorAll('.field-link-color');
+            
+            cardData.links = [];
+            inputNames.forEach((el, i) => {
+                const valName = el.value.trim();
+                if (valName) {
+                    cardData.links.push({
+                        name: valName,
+                        url: inputUrls[i].value.trim(),
+                        icon: inputIcons[i].value.trim() || 'fas fa-link',
+                        color: inputColors[i].value
+                    });
+                }
+            });
+
+            if (storedPassword) {
+                // 如果已經設定過密碼，直接儲存並切換回展示模式
+                saveToLocalStorage();
+                switchToViewMode();
+            } else {
+                // 如果是第一次使用 (無密碼)，彈出設定密碼 Modal
+                openCustomModal('modal-setup-password');
+            }
+        }
+
+        // 建立並確認密碼 (二次密碼核對)
+        function verifyAndSavePassword() {
+            const pwd1 = document.getElementById('setup-pwd-input-1').value;
+            const pwd2 = document.getElementById('setup-pwd-input-2').value;
+
+            if (pwd1.length < 4) {
+                showToast("密碼安全長度請大於或等於 4 個字元！");
+                return;
+            }
+            if (pwd1 !== pwd2) {
+                showToast("兩次密碼輸入不一致，請重新檢查！");
+                return;
+            }
+
+            localStorage.setItem('card_admin_pwd', pwd1);
+            storedPassword = pwd1;
+
+            saveToLocalStorage();
+            hideCustomModal('modal-setup-password');
+            switchToViewMode();
+        }
+
+        // ================= 隱密解鎖與驗證邏輯 =================
+        function triggerUnlockModal() {
+            if (!storedPassword) return; // 沒密碼直接忽略點擊
+            document.getElementById('verify-pwd-input').value = '';
+            openCustomModal('modal-verify-password');
+        }
+
+        function confirmVerifyPassword() {
+            const inputVal = document.getElementById('verify-pwd-input').value;
+            if (inputVal === storedPassword) {
+                hideCustomModal('modal-verify-password');
+                switchToEditMode(); // 密碼吻合，切回編輯模式並顯露所有修改項目
+            } else {
+                showToast("密碼輸入錯誤，請重試！");
+            }
+        }
+
+        function saveToLocalStorage() {
+            localStorage.setItem('card_data', JSON.stringify(cardData));
+        }
+
+        // ================= Modal 控制細節 =================
+        function openCustomModal(id) {
+            const modalEl = document.getElementById(id);
+            const cardBox = modalEl.querySelector('div');
+            modalEl.classList.remove('hidden');
+            setTimeout(() => {
+                modalEl.classList.remove('opacity-0');
+                cardBox.classList.remove('scale-95');
+                cardBox.classList.add('scale-100');
+            }, 15);
+        }
+
+        function hideCustomModal(id) {
+            const modalEl = document.getElementById(id);
+            const cardBox = modalEl.querySelector('div');
+            modalEl.classList.add('opacity-0');
+            cardBox.classList.remove('scale-100');
+            cardBox.classList.add('scale-95');
+            setTimeout(() => {
+                modalEl.classList.add('hidden');
+            }, 300);
+        }
+
+        // ================= 自定義 Toast/Alert 邏輯 =================
+        function showToast(msg) {
+            const toast = document.getElementById('custom-toast');
+            document.getElementById('toast-message').innerText = msg;
+            toast.classList.remove('pointer-events-none', 'opacity-0');
+            toast.classList.add('opacity-100');
+            toast.style.transform = 'translate(-50%, 0px)';
+            
+            setTimeout(() => {
+                toast.classList.add('pointer-events-none', 'opacity-0');
+                toast.classList.remove('opacity-100');
+                toast.style.transform = 'translate(-50%, -50px)';
+            }, 3000);
+        }
+
+        window.onload = initCardApp;
+    </script>
+</body>
+</html>
+
+```
