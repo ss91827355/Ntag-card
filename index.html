@@ -1,1 +1,827 @@
+```html
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <!-- 確保在 iOS 與 Android 上 100% 顯示比例一致，並禁止雙擊縮放以防版面變形 -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>個人專屬名片</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <style>
+        head, style, script { 
+            display: none !important; 
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #0b0f19;
+            background-size: cover;
+            background-position: center;
+            background-attachment: fixed;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 1rem;
+            color: white;
+            transition: background-image 0.5s ease-in-out;
+        }
+
+        input, textarea, select {
+            font-size: 16px !important;
+        }
+
+        .glass-card {
+            background: rgba(17, 24, 39, 0.85);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+        }
+
+        .left-bg-btn {
+            position: absolute;
+            left: -14px;
+            top: 50%;
+            transform: translateY(-50%);
+            z-index: 40;
+        }
+
+        .secret-modify-overlay {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            height: 48px;
+            background: transparent;
+            cursor: pointer;
+            z-index: 50;
+            border-bottom-left-radius: 1.5rem;
+            border-bottom-right-radius: 1.5rem;
+        }
+        
+        .secret-modify-overlay:active {
+            background: rgba(255, 255, 255, 0.03);
+        }
+
+        ::-webkit-scrollbar { width: 5px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 99px; }
+
+        img { -webkit-user-select: none; user-select: none; }
+    </style>
+</head>
+<body id="body-bg">
+
+    <div class="fixed inset-0 bg-black/70 z-0 pointer-events-none"></div>
+
+    <!-- 載入中遮罩層 -->
+    <div id="loading-overlay" class="fixed inset-0 z-50 flex flex-col items-center justify-center bg-slate-950">
+        <div class="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500 mb-4"></div>
+        <p class="text-sm text-slate-400 tracking-widest text-center px-4" id="loading-text">正在安全連線至個人雲端資料庫...</p>
+    </div>
+
+    <div class="relative w-full max-w-sm my-4 z-10">
+        
+        <!-- 【左側懸浮背景更換按鈕】 -->
+        <div id="bg-upload-wrapper" class="left-bg-btn hidden">
+            <label class="flex items-center justify-center w-9 h-9 rounded-full bg-blue-600 hover:bg-blue-500 text-white shadow-lg cursor-pointer transition-all transform active:scale-90 border border-white/20 animate-bounce" title="更換自訂背景">
+                <i class="fas fa-image text-xs"></i>
+                <input type="file" id="bg-file-input" accept="image/*" class="hidden" onchange="compressAndUploadBackground(event)">
+            </label>
+        </div>
+
+        <!-- 主卡片 -->
+        <main class="glass-card w-full rounded-3xl p-6 flex flex-col items-center min-h-[520px] relative overflow-hidden">
+
+            <!-- ==================== 1. 展示模式 (View Mode) ==================== -->
+            <div id="view-mode-section" class="w-full flex flex-col items-center hidden">
+                <div class="relative w-24 h-24 mb-4">
+                    <img id="view-avatar" src="" alt="Avatar" class="w-full h-full rounded-full object-cover border-4 border-white/10 shadow-2xl">
+                </div>
+
+                <h1 id="view-name" class="text-2xl font-bold tracking-wider text-center mb-1"></h1>
+                <h2 id="view-title" class="text-xs text-blue-400 font-medium tracking-widest uppercase text-center mb-4"></h2>
+                
+                <p id="view-bio" class="text-center text-sm text-gray-300 mb-6 leading-relaxed px-1 whitespace-pre-wrap max-h-[140px] overflow-y-auto w-full"></p>
+
+                <div id="view-links-container" class="w-full flex flex-col gap-3 pb-8">
+                    <!-- 由 JavaScript 動態渲染連結、電話與地址 -->
+                </div>
+                
+                <!-- 【極度隱密的修改按鈕】 -->
+                <div class="secret-modify-overlay" onclick="triggerUnlockModal()" title="系統管理入口"></div>
+            </div>
+
+            <!-- ==================== 2. 編輯模式 (Edit Mode) ==================== -->
+            <div id="edit-mode-section" class="w-full flex flex-col items-center">
+                <h2 class="text-base font-semibold mb-5 text-blue-400 flex items-center gap-2 tracking-widest uppercase">
+                    <i class="fas fa-sliders-h"></i> 編輯名片資訊
+                </h2>
+                
+                <div class="w-full space-y-4 max-h-[55vh] overflow-y-auto pr-1">
+                    
+                    <!-- 個人頭像與來源設定 -->
+                    <div class="border-b border-white/10 pb-4 space-y-3">
+                        <label class="text-xs text-white/50 block font-medium">大頭貼來源設定</label>
+                        
+                        <select id="avatar-source-select" onchange="handleAvatarSourceChange()" class="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500">
+                            <option value="ig" class="bg-slate-900">同步 Instagram 頭像</option>
+                            <option value="fb" class="bg-slate-900">同步 Facebook 頭像</option>
+                            <option value="upload" class="bg-slate-900">手動上傳自訂相片 (內建雲端壓縮)</option>
+                        </select>
+
+                        <div class="flex items-center gap-3 bg-white/5 p-3 rounded-2xl border border-white/5">
+                            <img id="edit-avatar-preview" src="https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80" class="w-14 h-14 rounded-full object-cover border-2 border-white/20">
+                            <div class="flex-1">
+                                <span id="avatar-status-text" class="text-[11px] text-green-400 font-medium block">同步設定中</span>
+                                
+                                <!-- 自訂上傳檔案按鈕 -->
+                                <label id="avatar-upload-input-label" class="hidden mt-1 inline-block bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold px-2.5 py-1.5 rounded-lg cursor-pointer transition active:scale-95">
+                                    <i class="fas fa-upload mr-1"></i> 選擇手機照片
+                                    <input type="file" id="avatar-file-input" accept="image/*" class="hidden" onchange="compressAndUploadAvatar(event)">
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 姓名與職稱 -->
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <label class="text-xs text-white/50 mb-1 block">您的姓名</label>
+                            <input type="text" id="edit-name" placeholder="請輸入姓名" class="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-white focus:outline-none focus:border-blue-500 text-sm">
+                        </div>
+                        <div>
+                            <div class="flex justify-between items-center mb-1">
+                                <label class="text-xs text-white/50 block">專業職稱 / 學位</label>
+                                <button type="button" id="ai-title-btn" onclick="suggestTitleWithAI()" class="text-[10px] bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 px-1.5 py-0.5 rounded hover:bg-indigo-600/50 transition flex items-center gap-1">
+                                    <span>✨ AI 構思</span>
+                                </button>
+                            </div>
+                            <input type="text" id="edit-title" placeholder="例如: 專案經理" class="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-white focus:outline-none focus:border-blue-500 text-sm">
+                        </div>
+                    </div>
+
+                    <!-- 學經歷與個人介紹 -->
+                    <div>
+                        <div class="flex justify-between items-center mb-1">
+                            <label class="text-xs text-white/50 block">個人簡介與學經歷</label>
+                            <button type="button" id="ai-bio-btn" onclick="optimizeBioWithAI()" class="text-[10px] bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 px-1.5 py-0.5 rounded hover:bg-indigo-600/50 transition flex items-center gap-1">
+                                <span>✨ AI 美化</span>
+                            </button>
+                        </div>
+                        <textarea id="edit-bio" rows="3" placeholder="請在此填寫您的學歷、工作背景或自我介紹..." class="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-blue-500 text-sm"></textarea>
+                    </div>
+
+                    <!-- 社群帳號設定 -->
+                    <div class="border-t border-white/10 pt-3 space-y-3">
+                        <span class="text-xs font-semibold text-blue-400 block tracking-wider">社群好友 ID 設定 (僅需填寫用戶名/ID，無須前綴)</span>
+                        
+                        <div>
+                            <label class="text-xs text-white/50 mb-1 block flex items-center gap-1.5"><i class="fab fa-line text-green-400 text-sm"></i> LINE 好友 ID</label>
+                            <input type="text" id="edit-id-line" oninput="updateSocialPreview()" placeholder="請輸入 LINE ID" class="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-white focus:outline-none focus:border-blue-500 text-sm">
+                        </div>
+
+                        <div>
+                            <label class="text-xs text-white/50 mb-1 block flex items-center gap-1.5"><i class="fab fa-instagram text-pink-400 text-sm"></i> Instagram 帳號 ID</label>
+                            <input type="text" id="edit-id-ig" oninput="updateSocialPreview()" placeholder="請輸入 IG 帳號" class="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-white focus:outline-none focus:border-blue-500 text-sm">
+                        </div>
+
+                        <div>
+                            <label class="text-xs text-white/50 mb-1 block flex items-center gap-1.5"><i class="fab fa-facebook text-blue-400 text-sm"></i> Facebook 帳號 ID</label>
+                            <input type="text" id="edit-id-fb" oninput="updateSocialPreview()" placeholder="請輸入 FB 帳號" class="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-white focus:outline-none focus:border-blue-500 text-sm">
+                        </div>
+                    </div>
+
+                    <!-- 聯絡資訊 -->
+                    <div class="border-t border-white/10 pt-3 space-y-3">
+                        <span class="text-xs font-semibold text-blue-400 block tracking-wider">聯絡資訊 (若不填寫，展示時自動隱藏)</span>
+                        <div>
+                            <label class="text-xs text-white/50 mb-1 block">聯絡電話</label>
+                            <input type="tel" id="edit-phone" placeholder="例如: 0912-345-678" class="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-white focus:outline-none focus:border-blue-500 text-sm">
+                        </div>
+                        <div>
+                            <label class="text-xs text-white/50 mb-1 block">聯絡地址</label>
+                            <input type="text" id="edit-address" placeholder="例如: 台北市信義區..." class="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-white focus:outline-none focus:border-blue-500 text-sm">
+                        </div>
+                    </div>
+
+                </div>
+
+                <!-- 確定並進入展示模式按鈕 -->
+                <button onclick="triggerSaveFlow()" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-semibold py-3.5 rounded-2xl transition-all duration-300 shadow-lg mt-4 flex items-center justify-center gap-2">
+                    <i class="fas fa-check"></i> 完成並同步至雲端
+                </button>
+            </div>
+
+        </main>
+    </div>
+
+    <!-- ==================== 對話框 (Modals) ==================== -->
+    
+    <!-- 1. 建立密碼對話框 -->
+    <div id="modal-setup-password" class="fixed inset-0 z-50 flex items-center justify-center bg-black/85 hidden opacity-0 transition-opacity duration-300">
+        <div class="glass-card w-11/12 max-w-sm rounded-3xl p-6 transform scale-95 transition-transform duration-300" id="setup-box">
+            <h3 class="text-lg font-bold mb-2 text-center text-blue-400">建立管理密碼</h3>
+            <p class="text-xs text-gray-300 mb-5 text-center">請設定此名片的管理密碼，之後在展示模式下，點擊卡片最底部輸入此密碼即可重新修改。</p>
+            
+            <input type="password" id="setup-pwd-input-1" placeholder="請設定管理密碼" class="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 mb-3 text-white text-center tracking-widest focus:outline-none focus:border-blue-500">
+            <input type="password" id="setup-pwd-input-2" placeholder="請再次輸入密碼確認" class="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 mb-5 text-white text-center tracking-widest focus:outline-none focus:border-blue-500">
+            
+            <div class="flex gap-3">
+                <button onclick="hideCustomModal('modal-setup-password')" class="flex-1 bg-white/10 hover:bg-white/20 py-2.5 rounded-xl transition text-sm">返回修改</button>
+                <button onclick="verifyAndSavePassword()" class="flex-1 bg-blue-600 hover:bg-blue-500 py-2.5 rounded-xl font-medium transition text-sm">確認鎖定</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 2. 輸入密碼驗證解鎖對話框 -->
+    <div id="modal-verify-password" class="fixed inset-0 z-50 flex items-center justify-center bg-black/85 hidden opacity-0 transition-opacity duration-300">
+        <div class="glass-card w-11/12 max-w-sm rounded-3xl p-6 transform scale-95 transition-transform duration-300" id="verify-box">
+            <h3 class="text-lg font-bold mb-2 text-center text-blue-400">解鎖編輯權限</h3>
+            <p class="text-xs text-gray-300 mb-5 text-center">請輸入正確密碼以進入編輯模式並開啟背景修改功能。</p>
+            
+            <input type="password" id="verify-pwd-input" placeholder="請輸入管理密碼" class="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 mb-5 text-white text-center tracking-widest focus:outline-none focus:border-blue-500">
+            
+            <div class="flex gap-3">
+                <button onclick="hideCustomModal('modal-verify-password')" class="flex-1 bg-white/10 hover:bg-white/20 py-2.5 rounded-xl transition text-sm">返回展示</button>
+                <button onclick="confirmVerifyPassword()" class="flex-1 bg-blue-600 hover:bg-blue-500 py-2.5 rounded-xl font-medium transition text-sm">解鎖編輯</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 3. 自定義精美 Toast/Alert 訊息框 -->
+    <div id="custom-toast" class="fixed top-5 left-1/2 transform -translate-x-1/2 z-50 bg-red-600/90 backdrop-blur-md border border-red-500/30 text-white text-sm font-medium px-6 py-3 rounded-2xl shadow-xl transition-all duration-300 translate-y-[-50px] opacity-0 pointer-events-none">
+        <span id="toast-message">提示訊息</span>
+    </div>
+
+    <!-- Firebase SDK 核心模組 -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { initializeFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // 🟢 使用您的專屬 Firebase 設定參數
+        const firebaseConfig = {
+          apiKey: "AIzaSyAU4q55DkXYlNmmGGMJVYXB6v2saQJTIaQ",
+          authDomain: "ntag-card.firebaseapp.com",
+          projectId: "ntag-card",
+          storageBucket: "ntag-card.firebasestorage.app",
+          messagingSenderId: "163482004228",
+          appId: "1:163482004228:web:e1280f3bff817d28a13e51"
+        };
+
+        const appId = "ss91827355-ntag-card"; 
+
+        // 初始化狀態與全域變數
+        window.cardData = {
+            avatarSource: 'ig',
+            avatarCustomBase64: '',
+            idLine: '',
+            idIg: '',
+            idFb: '',
+            name: '',
+            title: '',
+            bio: '',
+            phone: '',
+            address: '',
+            bgImage: '',
+            adminPassword: ''
+        };
+        window.storedPassword = "";
+
+        // 全域函數綁定
+        window.triggerSaveFlow = triggerSaveFlow;
+        window.verifyAndSavePassword = verifyAndSavePassword;
+        window.confirmVerifyPassword = confirmVerifyPassword;
+        window.triggerUnlockModal = triggerUnlockModal;
+        window.compressAndUploadBackground = compressAndUploadBackground;
+        window.compressAndUploadAvatar = compressAndUploadAvatar;
+        window.handleAvatarSourceChange = handleAvatarSourceChange;
+        window.updateSocialPreview = updateSocialPreview;
+        window.hideCustomModal = hideCustomModal;
+        window.suggestTitleWithAI = suggestTitleWithAI;
+        window.optimizeBioWithAI = optimizeBioWithAI;
+
+        let app, auth, db;
+
+        // 連線逾時防護定時器
+        const failsafeTimer = setTimeout(() => {
+            document.getElementById('loading-overlay').classList.add('hidden');
+            showToast("⚠️ 雲端資料庫連線逾時！將預先進入編輯模式。請檢查 Firebase 控制台的驗證設定。");
+            switchToEditMode();
+        }, 8500);
+
+        try {
+            app = initializeApp(firebaseConfig);
+            auth = getAuth(app);
+            
+            // 強制開啟 HTTP Long-polling，避開 Brave 等安全瀏覽器對 WebSocket 的隱私攔截
+            db = initializeFirestore(app, {
+                experimentalForceLongPolling: true
+            });
+
+            window.db = db;
+            window.doc = doc;
+            window.setDoc = setDoc;
+
+            initAuthAndFetch();
+        } catch (e) {
+            console.error("Firebase 初始化失敗:", e);
+            clearTimeout(failsafeTimer);
+            document.getElementById('loading-overlay').classList.add('hidden');
+            showToast("Firebase 初始化異常，請確認設定檔參數是否填寫正確。");
+            switchToEditMode();
+        }
+
+        // 登入驗證與資料監聽
+        async function initAuthAndFetch() {
+            try {
+                // 1. 匿名登入
+                const userCredential = await signInAnonymously(auth);
+                const user = userCredential.user;
+
+                if (!user) throw new Error("Anonymous Auth Failed");
+
+                // 2. 開啟 Firestore 即時監聽 (路徑嚴格遵循 RULE 1)
+                const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'cardData', 'mainProfile');
+                
+                onSnapshot(docRef, (docSnap) => {
+                    clearTimeout(failsafeTimer);
+                    document.getElementById('loading-overlay').classList.add('hidden');
+                    
+                    if (docSnap.exists()) {
+                        window.cardData = docSnap.data();
+                        window.storedPassword = window.cardData.adminPassword || "";
+                        applyCardBackground(window.cardData.bgImage);
+                        switchToViewMode();
+                    } else {
+                        // 雲端無任何文件時，初始化空白資料
+                        switchToEditMode();
+                    }
+                }, (error) => {
+                    console.error("Firestore 監聽失敗 (請確認安全性規則已開啟為允許讀寫):", error);
+                    clearTimeout(failsafeTimer);
+                    document.getElementById('loading-overlay').classList.add('hidden');
+                    // 🚨 精準報錯可視化：把 Firestore 的真實錯誤代碼呈現在畫面上
+                    showToast("讀取失敗！錯誤代碼: " + (error.code || "unknown") + " | " + error.message);
+                    switchToEditMode();
+                });
+
+            } catch (err) {
+                console.error("安全登入認證失敗:", err);
+                clearTimeout(failsafeTimer);
+                document.getElementById('loading-overlay').classList.add('hidden');
+                // 🚨 精準報錯可視化
+                showToast("登入授權被拒！錯誤代碼: " + (err.code || "unknown") + " | " + err.message);
+                switchToEditMode();
+            }
+        }
+
+        // ================= ✨ Gemini API LLM 模組 =================
+        async function fetchGeminiWithRetry(payload, retries = 5, delay = 1000) {
+            const apiKey = ""; // 執行環境自動注入
+            const url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=" + apiKey;
+            
+            for (let i = 0; i < retries; i++) {
+                try {
+                    const response = await fetch(url, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                    if (response.ok) {
+                        return await response.json();
+                    }
+                } catch (e) {
+                    // 自動進行重試
+                }
+                if (i < retries - 1) {
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                    delay *= 2;
+                }
+            }
+            throw new Error("無法與 AI 伺服器建立穩定連線，請稍後再試。");
+        }
+
+        async function suggestTitleWithAI() {
+            const nameInput = document.getElementById('edit-name');
+            const bioInput = document.getElementById('edit-bio');
+            const titleInput = document.getElementById('edit-title');
+            
+            const name = nameInput.value.trim() || "專業人士";
+            const currentBio = bioInput.value.trim();
+            const currentTitle = titleInput.value.trim();
+
+            if (!currentBio && !currentTitle) {
+                showToast("💡 請先填寫姓名或個人簡介，以便 AI 為您量身打造適合的亮點頭銜！");
+                return;
+            }
+
+            const btn = document.getElementById('ai-title-btn');
+            const originalText = btn.innerHTML;
+            btn.innerHTML = '<i class="fas fa-spinner animate-spin"></i> 構思中...';
+            btn.disabled = true;
+
+            const promptText = "請根據以下資訊，為名為「" + name + "」的專業人士，構思一個適合放在 NFC 行動電子名片上的「專業職稱與定位頭銜」（可包含學位或核心能力，例如「資深專案經理 / 產品設計師」、「藥理學碩士 / 專業連鎖藥師」）。\n\n當前職稱：「" + currentTitle + "」\n當前簡介：「" + currentBio + "」\n\n請直接提供 1 個最合適、簡短有質感的頭銜，使用繁體中文，且「絕對不要」包含任何引號、解釋或多餘的前後贅字。";
+
+            const payload = {
+                contents: [{ parts: [{ text: promptText }] }],
+                systemInstruction: { parts: [{ text: "你是一位頂尖的職涯發展顧問，擅長用最簡練且具商業吸引力的文字，為專業人士提煉出個人品牌定位職稱。" }] }
+            };
+
+            try {
+                const result = await fetchGeminiWithRetry(payload);
+                const suggestedTitle = result.candidates?.[0]?.content?.parts?.[0]?.text;
+                if (suggestedTitle) {
+                    titleInput.value = suggestedTitle.trim();
+                    showToast("✨ AI 職稱與頭銜構思完成！");
+                } else {
+                    throw new Error("解析失敗");
+                }
+            } catch (e) {
+                console.error(e);
+                showToast("AI 構思失敗: " + e.message);
+            } finally {
+                btn.innerHTML = originalText;
+                btn.disabled = false;
+            }
+        }
+
+        async function optimizeBioWithAI() {
+            const nameInput = document.getElementById('edit-name');
+            const titleInput = document.getElementById('edit-title');
+            const bioInput = document.getElementById('edit-bio');
+            
+            const name = nameInput.value.trim() || "名片主";
+            const title = titleInput.value.trim() || "專業人士";
+            const currentBio = bioInput.value.trim();
+
+            const btn = document.getElementById('ai-bio-btn');
+            const originalText = btn.innerHTML;
+            btn.innerHTML = '<i class="fas fa-spinner animate-spin"></i> 優化中...';
+            btn.disabled = true;
+
+            let promptText = "";
+            if (!currentBio) {
+                promptText = "請為名為「" + name + "」，職位為「" + title + "」的專業人士，撰寫一份大約 80 至 130 字的行動名片個人簡介與經歷草稿，語氣需要顯得沉穩、專業且具有親和力。請使用繁體中文回答，直接輸出內容，不要任何多餘的解釋。";
+            } else {
+                promptText = "請優化以下個人簡介與學經歷，使其看起來更具備專業商務感、邏輯結構得體，並維持字數精煉以適合行動名片閱讀：\n\n\"" + currentBio + "\"\n\n請使用繁體中文，直接輸出優化後的內容，不要有任何多餘的引號、引言或解釋。";
+            }
+
+            const payload = {
+                contents: [{ parts: [{ text: promptText }] }],
+                systemInstruction: { parts: [{ text: "你是一位頂尖的個人品牌顧問與文案專家，專長是將零散的學經歷資訊潤飾、優化成高質感、吸引人的職涯簡介。" }] }
+            };
+
+            try {
+                const result = await fetchGeminiWithRetry(payload);
+                const optimizedBio = result.candidates?.[0]?.content?.parts?.[0]?.text;
+                if (optimizedBio) {
+                    bioInput.value = optimizedBio.trim();
+                    showToast("✨ AI 個人簡歷文案美化成功！");
+                } else {
+                    throw new Error("解析失敗");
+                }
+            } catch (e) {
+                console.error(e);
+                showToast("AI 美化失敗: " + e.message);
+            } finally {
+                btn.innerHTML = originalText;
+                btn.disabled = false;
+            }
+        }
+
+        // ================= 圖片前端壓縮引擎 (頭像限制100px / 背景限制700px) =================
+        function compressImage(file, maxWidth, maxHeight, callback) {
+            const reader = new FileReader();
+            reader.onload = function (e) {
+                const img = new Image();
+                img.onload = function () {
+                    const canvas = document.createElement('canvas');
+                    let width = img.width;
+                    let height = img.height;
+
+                    if (width > height) {
+                        if (width > maxWidth) {
+                            height *= maxWidth / width;
+                            width = maxWidth;
+                        }
+                    } else {
+                        if (height > maxHeight) {
+                            width *= maxHeight / height;
+                            height = maxHeight;
+                        }
+                    }
+
+                    canvas.width = width;
+                    canvas.height = height;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0, width, height);
+                    
+                    // 採用極限 40% 品質壓縮，防止檔案過大導致寫入被拒絕
+                    const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.4);
+                    callback(compressedDataUrl);
+                };
+                img.src = e.target.result;
+            };
+            reader.readAsDataURL(file);
+        }
+
+        function compressAndUploadAvatar(event) {
+            const file = event.target.files[0];
+            if (file) {
+                compressImage(file, 100, 100, function(compressedBase64) {
+                    window.cardData.avatarCustomBase64 = compressedBase64;
+                    document.getElementById('edit-avatar-preview').src = compressedBase64;
+                    document.getElementById('avatar-status-text').innerText = "大頭貼已成功優化壓縮";
+                    document.getElementById('avatar-status-text').className = "text-[11px] text-green-400 font-medium";
+                });
+            }
+        }
+
+        function compressAndUploadBackground(event) {
+            const file = event.target.files[0];
+            if (file) {
+                compressImage(file, 700, 700, function(compressedBase64) {
+                    window.cardData.bgImage = compressedBase64;
+                    applyCardBackground(compressedBase64);
+                    showToast("自訂背景載入成功，請完成編輯後儲存！");
+                });
+            }
+        }
+
+        function applyCardBackground(bgData) {
+            const bodyBg = document.getElementById('body-bg');
+            if (bgData && bgData.startsWith('data:image')) {
+                bodyBg.style.backgroundImage = "url('" + bgData + "')";
+            } else {
+                bodyBg.style.backgroundImage = 'none';
+            }
+        }
+
+        function handleAvatarSourceChange() {
+            const source = document.getElementById('avatar-source-select').value;
+            window.cardData.avatarSource = source;
+            
+            const uploadLabel = document.getElementById('avatar-upload-input-label');
+            const statusLabel = document.getElementById('avatar-status-text');
+            const previewImg = document.getElementById('edit-avatar-preview');
+
+            if (source === 'upload') {
+                uploadLabel.classList.remove('hidden');
+                if (window.cardData.avatarCustomBase64) {
+                    previewImg.src = window.cardData.avatarCustomBase64;
+                    statusLabel.innerText = "已載入自訂大頭照";
+                    statusLabel.className = "text-[11px] text-green-400 font-medium";
+                } else {
+                    previewImg.src = 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80';
+                    statusLabel.innerText = "請點選按鈕上傳照片";
+                    statusLabel.className = "text-[11px] text-white/30";
+                }
+            } else {
+                uploadLabel.classList.add('hidden');
+                syncSocialAvatarPreview(source);
+            }
+        }
+
+        function syncSocialAvatarPreview(source) {
+            const previewImg = document.getElementById('edit-avatar-preview');
+            const statusLabel = document.getElementById('avatar-status-text');
+            
+            if (source === 'ig') {
+                const igId = document.getElementById('edit-id-ig').value.trim();
+                if (igId) {
+                    previewImg.src = "https://unavatar.io/instagram/" + igId;
+                    statusLabel.innerText = "同步 Instagram: @" + igId;
+                    statusLabel.className = "text-[11px] text-pink-400 font-medium";
+                } else {
+                    previewImg.src = 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80';
+                    statusLabel.innerText = "未設定 Instagram ID";
+                    statusLabel.className = "text-[11px] text-white/30";
+                }
+            } else if (source === 'fb') {
+                const fbId = document.getElementById('edit-id-fb').value.trim();
+                if (fbId) {
+                    previewImg.src = "https://unavatar.io/facebook/" + fbId;
+                    statusLabel.innerText = "同步 Facebook: " + fbId;
+                    statusLabel.className = "text-[11px] text-blue-400 font-medium";
+                } else {
+                    previewImg.src = 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80';
+                    statusLabel.innerText = "未設定 Facebook ID";
+                    statusLabel.className = "text-[11px] text-white/30";
+                }
+            }
+        }
+
+        function updateSocialPreview() {
+            const source = document.getElementById('avatar-source-select').value;
+            if (source !== 'upload') {
+                syncSocialAvatarPreview(source);
+            }
+        }
+
+        // ================= 模式切換與渲染 =================
+        function switchToViewMode() {
+            document.getElementById('edit-mode-section').classList.add('hidden');
+            document.getElementById('view-mode-section').classList.remove('hidden');
+            document.getElementById('bg-upload-wrapper').classList.add('hidden');
+            renderViewData();
+        }
+
+        function switchToEditMode() {
+            document.getElementById('view-mode-section').classList.add('hidden');
+            document.getElementById('edit-mode-section').classList.remove('hidden');
+            document.getElementById('bg-upload-wrapper').classList.remove('hidden');
+            renderEditFields();
+        }
+
+        function renderViewData() {
+            const avatarImg = document.getElementById('view-avatar');
+            
+            if (window.cardData.avatarSource === 'upload' && window.cardData.avatarCustomBase64) {
+                avatarImg.src = window.cardData.avatarCustomBase64;
+            } else if (window.cardData.avatarSource === 'ig' && window.cardData.idIg) {
+                avatarImg.src = "https://unavatar.io/instagram/" + window.cardData.idIg;
+            } else if (window.cardData.avatarSource === 'fb' && window.cardData.idFb) {
+                avatarImg.src = "https://unavatar.io/facebook/" + window.cardData.idFb;
+            } else {
+                avatarImg.src = 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80';
+            }
+            
+            avatarImg.onerror = function() {
+                this.src = 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80';
+            };
+
+            document.getElementById('view-name').innerText = window.cardData.name || '姓名尚未編輯';
+            document.getElementById('view-title').innerText = window.cardData.title || '專業職稱 / 經歷學位';
+            document.getElementById('view-bio').innerText = window.cardData.bio || '點選最下方透明區域，輸入密碼進入管理修改名片。';
+
+            const container = document.getElementById('view-links-container');
+            container.innerHTML = '';
+
+            const socialConfigs = [
+                { id: window.cardData.idLine, name: 'LINE 官方諮詢', prefix: 'https://line.me/ti/p/~', icon: 'fab fa-line', color: '#00B900' },
+                { id: window.cardData.idIg, name: 'Instagram 追蹤', prefix: 'https://instagram.com/', icon: 'fab fa-instagram', color: '#E1306C' },
+                { id: window.cardData.idFb, name: 'Facebook 帳號', prefix: 'https://facebook.com/', icon: 'fab fa-facebook', color: '#1877F2' }
+            ];
+
+            socialConfigs.forEach(social => {
+                if (social.id) {
+                    const btn = document.createElement('a');
+                    btn.href = social.prefix + social.id;
+                    btn.target = '_blank';
+                    btn.className = 'w-full flex items-center justify-center gap-3 py-3.5 px-5 rounded-2xl bg-white/10 hover:bg-white/15 border border-white/10 transition-all duration-300 backdrop-blur-md shadow-md transform active:scale-95';
+                    btn.innerHTML = `
+                        <i class="${social.icon} text-xl" style="color: ${social.color}"></i>
+                        <span class="font-semibold text-sm tracking-wider">${social.name}</span>
+                    `;
+                    container.appendChild(btn);
+                }
+            });
+
+            if (window.cardData.phone || window.cardData.address) {
+                const infoCard = document.createElement('div');
+                infoCard.className = 'w-full bg-white/5 rounded-2xl p-4 border border-white/10 text-sm text-gray-300 mt-2 space-y-2.5';
+                let rawHtml = '';
+                if (window.cardData.phone) {
+                    rawHtml += '<p class="flex items-center gap-3"><i class="fas fa-phone text-blue-400 w-5 text-center"></i> ' + window.cardData.phone + '</p>';
+                }
+                if (window.cardData.address) {
+                    rawHtml += '<p class="flex items-center gap-3"><i class="fas fa-map-marker-alt text-red-400 w-5 text-center"></i> ' + window.cardData.address + '</p>';
+                }
+                infoCard.innerHTML = rawHtml;
+                container.appendChild(infoCard);
+            }
+        }
+
+        function renderEditFields() {
+            document.getElementById('avatar-source-select').value = window.cardData.avatarSource || 'ig';
+            document.getElementById('edit-id-line').value = window.cardData.idLine || '';
+            document.getElementById('edit-id-ig').value = window.cardData.idIg || '';
+            document.getElementById('edit-id-fb').value = window.cardData.idFb || '';
+            document.getElementById('edit-name').value = window.cardData.name || '';
+            document.getElementById('edit-title').value = window.cardData.title || '';
+            document.getElementById('edit-bio').value = window.cardData.bio || '';
+            document.getElementById('edit-phone').value = window.cardData.phone || '';
+            document.getElementById('edit-address').value = window.cardData.address || '';
+            
+            handleAvatarSourceChange();
+        }
+
+        // ================= 儲存與驗證 =================
+        function triggerSaveFlow() {
+            window.cardData.avatarSource = document.getElementById('avatar-source-select').value;
+            window.cardData.idLine = document.getElementById('edit-id-line').value.trim();
+            window.cardData.idIg = document.getElementById('edit-id-ig').value.trim();
+            window.cardData.idFb = document.getElementById('edit-id-fb').value.trim();
+            window.cardData.name = document.getElementById('edit-name').value.trim();
+            window.cardData.title = document.getElementById('edit-title').value.trim();
+            window.cardData.bio = document.getElementById('edit-bio').value;
+            window.cardData.phone = document.getElementById('edit-phone').value.trim();
+            window.cardData.address = document.getElementById('edit-address').value.trim();
+
+            if (window.storedPassword) {
+                uploadCardToFirestore();
+            } else {
+                openCustomModal('modal-setup-password');
+            }
+        }
+
+        function verifyAndSavePassword() {
+            const pwd1 = document.getElementById('setup-pwd-input-1').value;
+            const pwd2 = document.getElementById('setup-pwd-input-2').value;
+
+            if (pwd1.length < 4) {
+                showToast("密碼安全長度請至少填寫 4 個字元！");
+                return;
+            }
+            if (pwd1 !== pwd2) {
+                showToast("兩次密碼輸入不一致，請重新檢查！");
+                return;
+            }
+
+            window.cardData.adminPassword = pwd1;
+            window.storedPassword = pwd1;
+
+            uploadCardToFirestore();
+            hideCustomModal('modal-setup-password');
+        }
+
+        async function uploadCardToFirestore() {
+            document.getElementById('loading-overlay').classList.remove('hidden');
+            document.getElementById('loading-text').innerText = "正在將資料與相片同步至雲端...";
+            try {
+                const docRef = window.doc(window.db, 'artifacts', window.appId, 'public', 'data', 'cardData', 'mainProfile');
+                await window.setDoc(docRef, window.cardData);
+                showToast("同步成功！全球皆可即時讀取新內容！");
+                switchToViewMode();
+            } catch (e) {
+                console.error("雲端更新失敗: ", e);
+                // 🚨 精準錯誤輸出：直接呈現錯誤代碼（如 permission-denied 等），方便使用者在 Firestore Console 修正規則
+                showToast("儲存失敗！錯誤詳情: " + (e.code || "unknown") + " | " + e.message);
+            } finally {
+                document.getElementById('loading-overlay').classList.add('hidden');
+            }
+        }
+
+        function triggerUnlockModal() {
+            if (!window.storedPassword) return; 
+            document.getElementById('verify-pwd-input').value = '';
+            openCustomModal('modal-verify-password');
+        }
+
+        function confirmVerifyPassword() {
+            const inputVal = document.getElementById('verify-pwd-input').value;
+            if (inputVal === window.storedPassword) {
+                hideCustomModal('modal-verify-password');
+                switchToEditMode(); 
+            } else {
+                showToast("密碼輸入錯誤，驗證失敗！");
+            }
+        }
+
+        function openCustomModal(id) {
+            const modalEl = document.getElementById(id);
+            const cardBox = modalEl.querySelector('div');
+            modalEl.classList.remove('hidden');
+            setTimeout(() => {
+                modalEl.classList.remove('opacity-0');
+                cardBox.classList.remove('scale-95');
+                cardBox.classList.add('scale-100');
+            }, 15);
+        }
+
+        function hideCustomModal(id) {
+            const modalEl = document.getElementById(id);
+            const cardBox = modalEl.querySelector('div');
+            modalEl.classList.add('opacity-0');
+            cardBox.classList.remove('scale-100');
+            cardBox.classList.add('scale-95');
+            setTimeout(() => {
+                modalEl.classList.add('hidden');
+            }, 300);
+        }
+
+        function showToast(msg) {
+            const toast = document.getElementById('custom-toast');
+            document.getElementById('toast-message').innerText = msg;
+            toast.classList.remove('pointer-events-none', 'opacity-0');
+            toast.classList.add('opacity-100');
+            toast.style.transform = 'translate(-50%, 0px)';
+            
+            setTimeout(() => {
+                toast.classList.add('pointer-events-none', 'opacity-0');
+                toast.classList.remove('opacity-100');
+                toast.style.transform = 'translate(-50%, -50px)';
+            }, 4500); // 延長顯示時間，便於記錄詳細錯誤
+        }
+    </script>
+</body>
+</html>
+
+```
 
