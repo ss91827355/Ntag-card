@@ -3,37 +3,466 @@
 <html lang="zh-Hant">
 <head>
     <meta charset="UTF-8">
-    <!-- 確保行動裝置顯示比例一致，禁止雙擊縮放 -->
+    <!-- 確保在 iOS 與 Android 上 100% 顯示比例一致，並禁止雙擊縮放以防版面變形 -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>個人專屬名片 & 雲端診斷儀</title>
+    <title>NTAG 個人名片產生器</title>
     
-    <!-- 引入 Tailwind CSS (非同步載入，不阻塞渲染) -->
+    <!-- 引入 Tailwind CSS 打造時尚簡潔風格 -->
     <script src="https://cdn.tailwindcss.com"></script>
     
-    <!-- 引入 FontAwesome 圖示 -->
+    <!-- 引入 FontAwesome 用於呈現精美社群圖示 -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 
     <style>
-        head, style, script { 
-            display: none !important; 
-        }
-
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
             background: radial-gradient(circle at center, #111827 0%, #030712 100%);
             min-height: 100vh;
             color: white;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 1.25rem;
         }
 
-        /* 磨砂玻璃卡片 */
+        /* 確保行動裝置點擊輸入框時不會導致網頁自動放大縮小 */
+        input, textarea, select {
+            font-size: 16px !important;
+        }
+
+        /* 磨砂玻璃擬物風 */
         .glass-card {
-            background: rgba(17, 24, 39, 0.7);
+            background: rgba(17, 24, 39, 0.75);
             backdrop-filter: blur(20px);
             -webkit-backdrop-filter: blur(20px);
             border: 1px solid rgba(255, 255, 255, 0.08);
             box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
         }
 
+        /* 手機板滾動優化 */
+        ::-webkit-scrollbar { width: 5px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 99px; }
+
+        img { -webkit-user-select: none; user-select: none; }
+    </style>
+</head>
+<body class="py-6 px-2">
+
+    <!-- 背景暗色半透明遮罩 -->
+    <div class="fixed inset-0 bg-black/60 z-0 pointer-events-none"></div>
+
+    <!-- 主容器：採用響應式雙欄佈局 (左邊編輯，右邊即時預覽) -->
+    <div class="relative w-full max-w-5xl grid grid-cols-1 lg:grid-cols-12 gap-8 z-10 items-start">
+        
+        <!-- ==================== 左側：編輯設定區 ==================== -->
+        <div class="lg:col-span-7 glass-card rounded-3xl p-6 sm:p-8 space-y-5">
+            <header class="border-b border-white/10 pb-4">
+                <h1 class="text-xl font-bold tracking-wider text-blue-400 flex items-center gap-2">
+                    <i class="fas fa-magic"></i> NTAG 電子名片產生工坊
+                </h1>
+                <p class="text-xs text-gray-400 mt-1">請在下方填寫您的名片資訊，右側將會即時同步預覽。確認無誤後即可一鍵下載網頁！</p>
+            </header>
+
+            <div class="space-y-4">
+                <!-- 1. 頭像與來源設定 -->
+                <div class="space-y-3">
+                    <label class="text-xs font-semibold text-blue-400 block tracking-wider">一、大頭貼相片設定</label>
+                    
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                            <label class="text-[11px] text-white/50 mb-1 block">大頭貼來源</label>
+                            <select id="avatar-source" onchange="updateAvatarPreview()" class="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-white text-sm focus:outline-none focus:border-blue-500">
+                                <option value="ig">同步 Instagram 頭像</option>
+                                <option value="fb">同步 Facebook 頭像</option>
+                                <option value="upload">手動上傳自訂照片</option>
+                            </select>
+                        </div>
+                        <div class="flex flex-col justify-end">
+                            <!-- 手動上傳頭像檔案控制項 -->
+                            <label id="avatar-file-label" class="hidden w-full bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold py-3 rounded-xl cursor-pointer text-center transition active:scale-95">
+                                <i class="fas fa-upload mr-1"></i> 上傳大頭貼照片
+                                <input type="file" id="avatar-file-input" accept="image/*" class="hidden" onchange="handleAvatarUpload(event)">
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 2. 基本資料 -->
+                <div class="border-t border-white/10 pt-3 space-y-3">
+                    <label class="text-xs font-semibold text-blue-400 block tracking-wider">二、基本資料設定</label>
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <label class="text-[11px] text-white/50 mb-1 block">您的姓名</label>
+                            <input type="text" id="input-name" oninput="syncTextPreview()" placeholder="請輸入姓名" class="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-white focus:outline-none focus:border-blue-500 text-sm">
+                        </div>
+                        <div>
+                            <label class="text-[11px] text-white/50 mb-1 block">專業職稱 / 學位</label>
+                            <input type="text" id="input-title" oninput="syncTextPreview()" placeholder="例如：藥師、專案經理" class="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-white focus:outline-none focus:border-blue-500 text-sm">
+                        </div>
+                    </div>
+                    <div>
+                        <label class="text-[11px] text-white/50 mb-1 block">個人簡介與學經歷</label>
+                        <textarea id="input-bio" oninput="syncTextPreview()" rows="3" placeholder="請填寫您的學歷、工作背景或自我介紹..." class="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-blue-500 text-sm"></textarea>
+                    </div>
+                </div>
+
+                <!-- 3. 社群好友連結 -->
+                <div class="border-t border-white/10 pt-3 space-y-3">
+                    <label class="text-xs font-semibold text-blue-400 block tracking-wider">三、社群好友 ID 設定 (僅需填寫用戶名/ID)</label>
+                    <div>
+                        <label class="text-[11px] text-white/50 mb-1 block flex items-center gap-1.5"><i class="fab fa-line text-green-400"></i> LINE 好友 ID</label>
+                        <input type="text" id="input-id-line" oninput="syncSocialButtons()" placeholder="請輸入 LINE ID" class="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-white focus:outline-none focus:border-blue-500 text-sm">
+                    </div>
+                    <div>
+                        <label class="text-[11px] text-white/50 mb-1 block flex items-center gap-1.5"><i class="fab fa-instagram text-pink-400"></i> Instagram 帳號 ID</label>
+                        <input type="text" id="input-id-ig" oninput="updateAvatarPreview(); syncSocialButtons();" placeholder="請輸入 IG 帳號 ID" class="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-white focus:outline-none focus:border-blue-500 text-sm">
+                    </div>
+                    <div>
+                        <label class="text-[11px] text-white/50 mb-1 block flex items-center gap-1.5"><i class="fab fa-facebook text-blue-400"></i> Facebook 帳號 ID</label>
+                        <input type="text" id="input-id-fb" oninput="updateAvatarPreview(); syncSocialButtons();" placeholder="請輸入 FB 帳號 ID" class="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-white focus:outline-none focus:border-blue-500 text-sm">
+                    </div>
+                </div>
+
+                <!-- 4. 其他聯絡資訊 -->
+                <div class="border-t border-white/10 pt-3 space-y-3">
+                    <label class="text-xs font-semibold text-blue-400 block tracking-wider">四、聯絡電話與地址 (選填)</label>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                            <label class="text-[11px] text-white/50 mb-1 block">聯絡電話</label>
+                            <input type="tel" id="input-phone" oninput="syncContactCard()" placeholder="例如：0912-345-678" class="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-white focus:outline-none focus:border-blue-500 text-sm">
+                        </div>
+                        <div>
+                            <label class="text-[11px] text-white/50 mb-1 block">聯絡地址</label>
+                            <input type="text" id="input-address" oninput="syncContactCard()" placeholder="例如：台北市信義區..." class="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-white focus:outline-none focus:border-blue-500 text-sm">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 下載產生按鈕 -->
+            <button onclick="compileAndDownload()" class="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold py-4 rounded-2xl transition-all duration-300 shadow-xl mt-4 flex items-center justify-center gap-2 transform active:scale-95">
+                <i class="fas fa-file-download text-lg"></i> 產出並下載個人名片網頁 (HTML)
+            </button>
+        </div>
+
+        <!-- ==================== 右側：即時卡片預覽區 ==================== -->
+        <div class="lg:col-span-5 flex flex-col items-center w-full">
+            <span class="text-xs font-semibold text-gray-400 mb-3 tracking-widest uppercase block"><i class="fas fa-eye mr-1"></i> 即時效果預覽</span>
+            
+            <!-- 名片展示模組 -->
+            <div class="glass-card w-full rounded-3xl p-6 sm:p-8 flex flex-col items-center min-h-[500px] relative overflow-hidden transition-all duration-300">
+                <!-- 大頭貼預覽 -->
+                <div class="relative w-24 h-24 mb-4 z-10">
+                    <img id="preview-avatar" src="https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80" alt="Avatar" class="w-full h-full rounded-full object-cover border-4 border-white/10 shadow-2xl">
+                </div>
+
+                <!-- 姓名與專業職稱預覽 -->
+                <h1 id="preview-name" class="text-2xl font-bold tracking-wider text-center mb-1 z-10">您的姓名</h1>
+                <h2 id="preview-title" class="text-xs text-blue-400 font-medium tracking-widest uppercase text-center mb-4 z-10">專業職稱 / 經歷學位</h2>
+                
+                <!-- 學經歷個人簡介預覽 -->
+                <p id="preview-bio" class="text-center text-sm text-gray-300 mb-6 leading-relaxed px-1 whitespace-pre-wrap max-h-[140px] overflow-y-auto w-full z-10">請於左側輸入您的介紹...</p>
+
+                <!-- 社群連結預覽容器 -->
+                <div id="preview-links-container" class="w-full flex flex-col gap-3 pb-4 z-10">
+                    <!-- 由 JS 動態同步渲染 -->
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- 自定義精美 Toast -->
+    <div id="custom-toast" class="fixed top-5 left-1/2 transform -translate-x-1/2 z-50 bg-emerald-600/95 backdrop-blur-md border border-emerald-500/30 text-white text-sm font-medium px-6 py-3 rounded-2xl shadow-xl transition-all duration-300 translate-y-[-50px] opacity-0 pointer-events-none">
+        <span id="toast-message">提示訊息</span>
+    </div>
+
+    <script>
+        let customAvatarBase64 = "";
+
+        // ================= 智慧前端等比相片壓縮引擎 =================
+        function compressImage(file, maxWidth, maxHeight, callback) {
+            const reader = new FileReader();
+            reader.onload = function (e) {
+                const img = new Image();
+                img.onload = function () {
+                    const canvas = document.createElement('canvas');
+                    let width = img.width;
+                    let height = img.height;
+
+                    if (width > height) {
+                        if (width > maxWidth) {
+                            height *= maxWidth / width;
+                            width = maxWidth;
+                        }
+                    } else {
+                        if (height > maxHeight) {
+                            width *= maxHeight / height;
+                            height = maxHeight;
+                        }
+                    }
+
+                    canvas.width = width;
+                    canvas.height = height;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0, width, height);
+                    
+                    const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.5); // 壓縮畫質為 50%
+                    callback(compressedDataUrl);
+                };
+                img.src = e.target.result;
+            };
+            reader.readAsDataURL(file);
+        }
+
+        // 處理頭像上傳
+        function handleAvatarUpload(event) {
+            const file = event.target.files[0];
+            if (file) {
+                compressImage(file, 120, 120, function(compressedBase64) {
+                    customAvatarBase64 = compressedBase64;
+                    document.getElementById('avatar-status-text').innerText = "大頭貼已成功加載且優化壓縮";
+                    document.getElementById('avatar-status-text').className = "text-[11px] text-green-400 font-medium";
+                    updateAvatarPreview();
+                });
+            }
+        }
+
+        // 同步文字資料至預覽卡片
+        function syncTextPreview() {
+            const name = document.getElementById('input-name').value.trim();
+            const title = document.getElementById('input-title').value.trim();
+            const bio = document.getElementById('input-bio').value;
+
+            document.getElementById('preview-name').innerText = name || "您的姓名";
+            document.getElementById('preview-title').innerText = title || "專業職稱 / 經歷學位";
+            document.getElementById('preview-bio').innerText = bio || "請於左側輸入您的介紹...";
+        }
+
+        // 同步大頭貼預覽 (包含 IG/FB 的 Unavatar 連線代理)
+        function updateAvatarPreview() {
+            const source = document.getElementById('avatar-source').value;
+            const uploadLabel = document.getElementById('avatar-file-label');
+            const statusLabel = document.getElementById('avatar-status-text');
+            const previewImg = document.getElementById('preview-avatar');
+
+            if (source === 'upload') {
+                uploadLabel.classList.remove('hidden');
+                if (customAvatarBase64) {
+                    previewImg.src = customAvatarBase64;
+                    statusLabel.innerText = "已載入自訂大頭照";
+                    statusLabel.className = "text-[11px] text-green-400 font-medium";
+                } else {
+                    previewImg.src = 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80';
+                    statusLabel.innerText = "請點選按鈕上傳形象照";
+                    statusLabel.className = "text-[11px] text-white/30";
+                }
+            } else {
+                uploadLabel.classList.add('hidden');
+                if (source === 'ig') {
+                    const id = document.getElementById('input-id-ig').value.trim();
+                    if (id) {
+                        previewImg.src = "https://unavatar.io/instagram/" + id;
+                        statusLabel.innerText = "已同步 Instagram: @" + id;
+                        statusLabel.className = "text-[11px] text-pink-400 font-medium";
+                    } else {
+                        previewImg.src = 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80';
+                        statusLabel.innerText = "請輸入 IG ID 即可同步大頭照";
+                        statusLabel.className = "text-[11px] text-white/30";
+                    }
+                } else if (source === 'fb') {
+                    const id = document.getElementById('input-id-fb').value.trim();
+                    if (id) {
+                        previewImg.src = "https://unavatar.io/facebook/" + id;
+                        statusLabel.innerText = "已同步 Facebook: " + id;
+                        statusLabel.className = "text-[11px] text-blue-400 font-medium";
+                    } else {
+                        previewImg.src = 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80';
+                        statusLabel.innerText = "請輸入 FB ID 即可同步大頭照";
+                        statusLabel.className = "text-[11px] text-white/30";
+                    }
+                }
+            }
+        }
+
+        // 同步社群好友跳轉按鈕
+        function syncSocialButtons() {
+            const container = document.getElementById('preview-links-container');
+            container.innerHTML = "";
+
+            const idLine = document.getElementById('input-id-line').value.trim();
+            const idIg = document.getElementById('input-id-ig').value.trim();
+            const idFb = document.getElementById('input-id-fb').value.trim();
+
+            if (idLine) {
+                container.innerHTML += '<div class="w-full flex items-center justify-center gap-3 py-3 px-5 rounded-2xl bg-white/10 border border-white/10 shadow-md"><i class="fab fa-line text-xl" style="color: #00B900"></i><span class="font-semibold text-sm tracking-wider">LINE 官方諮詢</span></div>';
+            }
+            if (idIg) {
+                container.innerHTML += '<div class="w-full flex items-center justify-center gap-3 py-3 px-5 rounded-2xl bg-white/10 border border-white/10 shadow-md"><i class="fab fa-instagram text-xl" style="color: #E1306C"></i><span class="font-semibold text-sm tracking-wider">Instagram 追蹤</span></div>';
+            }
+            if (idFb) {
+                container.innerHTML += '<div class="w-full flex items-center justify-center gap-3 py-3 px-5 rounded-2xl bg-white/10 border border-white/10 shadow-md"><i class="fab fa-facebook text-xl" style="color: #1877F2"></i><span class="font-semibold text-sm tracking-wider">Facebook 帳號</span></div>';
+            }
+
+            syncContactCard();
+        }
+
+        // 同步電話與聯絡資訊卡片
+        function syncContactCard() {
+            const phone = document.getElementById('input-phone').value.trim();
+            const address = document.getElementById('input-address').value.trim();
+            
+            const existCard = document.getElementById('preview-contact-box');
+            if (existCard) existCard.remove();
+
+            if (phone || address) {
+                const infoCard = document.createElement('div');
+                infoCard.id = "preview-contact-box";
+                infoCard.className = 'w-full bg-white/5 rounded-2xl p-4 border border-white/10 text-sm text-gray-300 mt-2 space-y-2.5';
+                let rawHtml = '';
+                if (phone) {
+                    rawHtml += '<p class="flex items-center gap-3"><i class="fas fa-phone text-blue-400 w-5 text-center"></i> ' + phone + '</p>';
+                }
+                if (address) {
+                    rawHtml += '<p class="flex items-center gap-3"><i class="fas fa-map-marker-alt text-red-400 w-5 text-center"></i> ' + address + '</p>';
+                }
+                infoCard.innerHTML = rawHtml;
+                document.getElementById('preview-links-container').appendChild(infoCard);
+            }
+        }
+
+        // ================= 核心安全：純字串拼接下載引擎 =================
+        function compileAndDownload() {
+            const name = document.getElementById('input-name').value.trim() || "個人名片";
+            const title = document.getElementById('input-title').value.trim() || "專業職稱";
+            const bio = document.getElementById('input-bio').value || "";
+            const idLine = document.getElementById('input-id-line').value.trim();
+            const idIg = document.getElementById('input-id-ig').value.trim();
+            const idFb = document.getElementById('input-id-fb').value.trim();
+            const phone = document.getElementById('input-phone').value.trim();
+            const address = document.getElementById('input-address').value.trim();
+            const avatarSource = document.getElementById('avatar-source').value;
+
+            // 判斷最終輸出的頭像路徑
+            let finalAvatarUrl = "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80";
+            if (avatarSource === 'upload' && customAvatarBase64) {
+                finalAvatarUrl = customAvatarBase64;
+            } else if (avatarSource === 'ig' && idIg) {
+                finalAvatarUrl = "https://unavatar.io/instagram/" + idIg;
+            } else if (avatarSource === 'fb' && idFb) {
+                finalAvatarUrl = "https://unavatar.io/facebook/" + idFb;
+            }
+
+            // 採用陣列 Line-by-line 結合字串拼接，物理性杜絕任何字面標籤被瀏覽器 HTML 預解析的可能
+            const h = [];
+            h.push('<!DOCTYPE html>');
+            h.push('<html lang="zh-Hant">');
+            h.push('<head>');
+            h.push('    <meta charset="UTF-8">');
+            h.push('    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">');
+            h.push('    <title>' + name + ' | 個人名片</title>');
+            h.push('    <' + 'script src="https://cdn.tailwindcss.com"></' + 'script>');
+            h.push('    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">');
+            h.push('    <style>');
+            h.push('        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: radial-gradient(circle at center, #1e293b 0%, #0f172a 100%); min-height: 100vh; display: flex; justify-content: center; align-items: center; padding: 1rem; color: white; }');
+            h.push('        .glass-card { background: rgba(17, 24, 39, 0.85); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border: 1px solid rgba(255, 255, 255, 0.1); box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5); }');
+            h.push('        img { -webkit-user-select: none; user-select: none; }');
+            h.push('    </style>');
+            h.push('</head>');
+            h.push('<body>');
+            h.push('    <div class="fixed inset-0 bg-black/70 z-0 pointer-events-none"></div>');
+            h.push('    <div class="relative w-full max-w-sm my-4 z-10">');
+            h.push('        <main class="glass-card w-full rounded-3xl p-6 flex flex-col items-center min-h-[500px] relative overflow-hidden">');
+            h.push('            <div class="relative w-24 h-24 mb-4">');
+            h.push('                <img id="view-avatar" src="' + finalAvatarUrl + '" alt="Avatar" class="w-full h-full rounded-full object-cover border-4 border-white/10 shadow-2xl">');
+            h.push('            </div>');
+            h.push('            <h1 class="text-2xl font-bold tracking-wider text-center mb-1">' + name + '</h1>');
+            h.push('            <h2 class="text-xs text-blue-400 font-medium tracking-widest uppercase text-center mb-4">' + title + '</h2>');
+            h.push('            <p class="text-center text-sm text-gray-300 mb-6 leading-relaxed px-1 whitespace-pre-wrap max-h-[140px] overflow-y-auto w-full">' + bio + '</p>');
+            h.push('            <div class="w-full flex flex-col gap-3 pb-8">');
+
+            if (idLine) {
+                h.push('                <a href="https://line.me/ti/p/~' + idLine + '" target="_blank" class="w-full flex items-center justify-center gap-3 py-3.5 px-5 rounded-2xl bg-white/10 hover:bg-white/15 border border-white/10 transition-all duration-300 backdrop-blur-md shadow-md transform active:scale-95">');
+                h.push('                    <i class="fab fa-line text-xl" style="color: #00B900"></i>');
+                h.push('                    <span class="font-semibold text-sm tracking-wider">LINE 官方諮詢</span>');
+                h.push('                </a>');
+            }
+            if (idIg) {
+                h.push('                <a href="https://instagram.com/' + idIg + '" target="_blank" class="w-full flex items-center justify-center gap-3 py-3.5 px-5 rounded-2xl bg-white/10 hover:bg-white/15 border border-white/10 transition-all duration-300 backdrop-blur-md shadow-md transform active:scale-95">');
+                h.push('                    <i class="fab fa-instagram text-xl" style="color: #E1306C"></i>');
+                h.push('                    <span class="font-semibold text-sm tracking-wider">Instagram 追蹤</span>');
+                h.push('                </a>');
+            }
+            if (idFb) {
+                h.push('                <a href="https://facebook.com/' + idFb + '" target="_blank" class="w-full flex items-center justify-center gap-3 py-3.5 px-5 rounded-2xl bg-white/10 hover:bg-white/15 border border-white/10 transition-all duration-300 backdrop-blur-md shadow-md transform active:scale-95">');
+                h.push('                    <i class="fab fa-facebook text-xl" style="color: #1877F2"></i>');
+                h.push('                    <span class="font-semibold text-sm tracking-wider">Facebook 帳號</span>');
+                h.push('                </a>');
+            }
+
+            if (phone || address) {
+                h.push('                <div class="w-full bg-white/5 rounded-2xl p-4 border border-white/10 text-sm text-gray-300 mt-2 space-y-2.5">');
+                if (phone) {
+                    h.push('                    <p class="flex items-center gap-3"><i class="fas fa-phone text-blue-400 w-5 text-center"></i> ' + phone + '</p>');
+                }
+                if (address) {
+                    h.push('                    <p class="flex items-center gap-3"><i class="fas fa-map-marker-alt text-red-400 w-5 text-center"></i> ' + address + '</p>');
+                }
+                h.push('                </div>');
+            }
+
+            h.push('            </div>');
+            h.push('        </main>');
+            h.push('    </div>');
+            h.push('    <' + 'script>');
+            h.push('        window.onload = function() {');
+            h.push('            const avatar = document.getElementById("view-avatar");');
+            h.push('            if (avatar) {');
+            h.push('                avatar.onerror = function() {');
+            h.push('                    this.src = "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80";');
+            h.push('                };');
+            h.push('            }');
+            h.push('        };');
+            h.push('    </' + 'script>'); // 強制拼接，保證安全不截斷
+            h.push('</body>');
+            h.push('</html>');
+
+            const finalHtml = h.join('\n');
+
+            // 建立下載物件並觸發下載
+            const blob = new Blob([finalHtml], { type: 'text/html;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const anchor = document.createElement('a');
+            anchor.href = url;
+            anchor.download = 'index.html'; 
+            document.body.appendChild(anchor);
+            anchor.click();
+            document.body.removeChild(anchor);
+            URL.revokeObjectURL(url);
+
+            showToast("🎉 個人名片網頁（index.html）已成功下載！上傳覆蓋 GitHub 即可。");
+        }
+
+        // ================= Toast 控制 =================
+        function showToast(msg) {
+            const toast = document.getElementById('custom-toast');
+            document.getElementById('toast-message').innerText = msg;
+            toast.classList.remove('pointer-events-none', 'opacity-0');
+            toast.classList.add('opacity-100');
+            toast.style.transform = 'translate(-50%, 0px)';
+            
+            setTimeout(() => {
+                toast.classList.add('pointer-events-none', 'opacity-0');
+                toast.classList.remove('opacity-100');
+                toast.style.transform = 'translate(-50%, -50px)';
+            }, 4000);
+        }
+    </script>
+</body>
+</html>
+
+```
         /* 隱密修改熱區 */
         .secret-modify-overlay {
             position: absolute;
